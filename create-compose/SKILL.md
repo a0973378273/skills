@@ -1,5 +1,5 @@
 ---
-name: compose
+name: create-compose
 description: 創建符合 MVI 架構的 Jetpack Compose 組件。自動生成 @Preview，按需創建 State、Event、Effect、ViewModel。當需要創建新的 Compose UI 組件、Screen、Widget 時使用此 skill。
 ---
 

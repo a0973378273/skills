@@ -1,5 +1,5 @@
 ---
-name: scheduled-task
+name: schedule-task
 description: 自動排程執行 Jira 任務的 skill。在指定時間窗口（21:00-07:00）內自動執行，檢查 usage < 80%，自動處理 git stash/commit，並為每個 issue 創建獨立 branch。適合批次處理多個 Jira issues。
 ---
 

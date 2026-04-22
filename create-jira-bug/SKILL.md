@@ -1,5 +1,5 @@
 ---
-name: create-jira-bug-issue
+name: create-jira-bug
 description: 解析 QA 回報的 Bug 文字，自動擷取設備資訊、情境敘述、目前情況、預期情況，建立 Jira Bug issue。自動設定標籤 Android、Sprint 為 bug pool、影響版本從文字中擷取、受託人為自己。適合用於快速將 QA 回報轉成 Jira Bug ticket。
 ---
 
