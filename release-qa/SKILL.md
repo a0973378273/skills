@@ -1,5 +1,5 @@
 ---
-name: qa-release
+name: release-qa
 description: 自動將 dev branch 合併到 QA branch、更新版本號、修改 release notes 並上傳到 Firebase App Distribution。當需要發布 QA 版本時使用此 skill。
 ---
 
@@ -27,10 +27,15 @@ description: 自動將 dev branch 合併到 QA branch、更新版本號、修改
 
 ### 2. 自動生成 Release Notes
 - 查詢 QA branch 與 dev branch 之間的差異 commit
-- 從 commit 訊息中提取資訊：
+- 從 commit 訊息中提取資訊（**必須掃描完整 commit 訊息，包含標題和 body**）：
   - Jira issue 編號（如 [EK-XXX]、EK-XXX）
   - 功能描述（fix、feat、chore 等）
   - PR 標題和描述
+- **重要：Squash Merge 處理**
+  - 當 PR 使用 squash merge 時，所有子 commit 會被壓縮成一個 commit
+  - 此時 Jira issue 編號可能只出現在 commit body 中，而非標題
+  - 必須使用 `git log --format="%H%n%s%n%b"` 或類似命令取得完整訊息
+  - 從完整訊息（標題 + body）中提取所有 `EK-XXX` 編號
 - 自動整理成 Release Note 列表
 
 ### 3. 版本號管理
@@ -67,20 +72,32 @@ description: 自動將 dev branch 合併到 QA branch、更新版本號、修改
 - 分發到 Dev 和 QA 測試群組
 
 ### 7. Jira Issue 驗證與修正
-Firebase 部署完成後，自動驗證此版本涉及的所有 Jira issue 狀態是否正確，若不符合則自動修正。
+Firebase 部署完成後，自動驗證此版本涉及的所有 Jira issue 狀態是否正確，若不符合則自動修正。根據 issue 類型（Bug 或非 Bug）執行不同的驗證邏輯。
+
+**Jira Issue 提取來源（重要）：**
+- **不要只從 Release Notes 提取 Jira issue**，因為 squash merge 的 PR 標題可能不含 Jira 編號
+- 必須獨立執行 `git log QA_PREV..QA --format="%s%n%b"`（或前次 QA 版本 commit 到本次 merge commit 之間），從完整 commit 訊息（標題 + body）中提取所有 `EK-XXX` 編號
+- 對提取結果去重後，逐一進行驗證與修正
 
 **驗證項目：**
 
-#### 7.1 狀態檢查
-- 使用 `mcp__jira-extended__jira_get_issue` 取得每個 issue 的當前狀態
-- 確認狀態是否為「QA 測試」
-- 若不是，使用 `mcp__jira-extended__jira_transition_issue` 將狀態改為「QA 測試」
+#### 7.1 狀態檢查（根據 issue 類型）
+- 使用 `mcp__jira-extended__jira_get_issue` 取得每個 issue 的當前狀態和類型
+- **Bug（漏洞）**：確認狀態是否為「QA 測試」，若不是則使用 `mcp__jira-extended__jira_transition_issue` 將狀態改為「QA 測試」
+- **非 Bug（Task、Story 等）**：確認狀態是否為「完成」，若不是則使用 `mcp__jira-extended__jira_transition_issue` 將狀態改為「完成」
 
-#### 7.2 受託人檢查
-- 確認 issue 的 assignee（受託人）是否為 reporter（回報人）
-- 若不是，使用 `mcp__jira-extended__jira_update_assignee` 將 assignee 改為 reporter
+#### 7.2 受託人檢查（僅 Bug 類型）
+- **Bug（漏洞）**：確認 issue 的 assignee（受託人）是否為 reporter（回報人），若不是則使用 `mcp__jira-extended__jira_update_assignee` 將 assignee 改為 reporter
+- **非 Bug（Task、Story 等）**：不修改受託人，保持原有 assignee 不變
 
-#### 7.3 留言檢查
+#### 7.3 修正版本檢查
+- 確認 issue 的修正版本（Fix Version）是否包含「Android {appVersionName}」（例如：`Android 1.2.4`）
+- 若不包含，使用 `mcp__jira-extended__jira_update_issue` 新增修正版本
+- 使用 `fields: { "fixVersions": [{"name": "Android X.X.X"}] }` 格式設定
+- 其中 `X.X.X` 為此次發布的 `appVersionName`（從 `gradle/libs.versions.toml` 讀取）
+- **注意**：若 issue 已有其他修正版本，應保留既有版本並新增，不可覆蓋
+
+#### 7.4 留言檢查
 - 取得 issue 的最新留言
 - 確認最新留言是否包含：
   - 此次發布的版號（新的 `appVersionCode`）
@@ -96,9 +113,9 @@ Firebase 部署完成後，自動驗證此版本涉及的所有 Jira issue 狀�
 **驗證結果輸出：**
 ```
 📋 Jira Issue 驗證結果：
-- [EK-927] ✅ 狀態: QA 測試 | ✅ 受託人: 回報人 | ✅ 留言: 已包含版號和 PR 連結
-- [EK-930] ⚠️ 狀態: 已修正→QA 測試 | ✅ 受託人: 回報人 | ⚠️ 留言: 已補充版號和 PR 連結
-- [EK-932] ✅ 狀態: QA 測試 | ⚠️ 受託人: 已修正→回報人 | ✅ 留言: 已包含版號和 PR 連結
+- [EK-927] (Bug) ✅ 狀態: QA 測試 | ✅ 受託人: 回報人 | ✅ 修正版本: Android 1.2.4 | ✅ 留言: 已包含版號和 PR 連結
+- [EK-930] (Bug) ⚠️ 狀態: 已修正→QA 測試 | ✅ 受託人: 回報人 | ⚠️ 修正版本: 已新增 Android 1.2.4 | ⚠️ 留言: 已補充版號和 PR 連結
+- [EK-932] (Task) ⚠️ 狀態: 進行中→完成 | ➖ 受託人: 不修改 | ⚠️ 修正版本: 已新增 Android 1.2.4 | ✅ 留言: 已包含版號和 PR 連結
 ```
 
 ## 執行示例
@@ -131,6 +148,21 @@ Firebase 部署完成後，自動驗證此版本涉及的所有 Jira issue 狀�
 - ✅ Git commit 資訊
 - ✅ Jira Issue 驗證與修正結果（狀態、受託人、留言）
 
+**重要：輸出格式必須使用清單（不可使用表格），且長 URL 必須使用 markdown 短連結，避免連結被截斷。**
+
+輸出格式範例：
+```
+## QA Release 完成
+
+- **版本**: 1.2.4 (102040010)
+- **前版本**: 1.2.4 (102040009)
+- **Release Notes**: 修正設定頁返回後隱私與通知設定未更新的問題 (PR #254)
+- **Git Commit**: `da47083d` on QA branch
+- **PR**: [#254](https://github.com/SHOW-YOU-APP/ekkorn-android/pull/254)
+- **Firebase Console**: [App Distribution](https://console.firebase.google.com/project/show-you-8f297/appdistribution/app/android:com.showyouapp.ekkorn)
+- **測試人員下載**: [下載連結](https://appdistribution.firebase.google.com/testerapps/...)
+```
+
 **重要：提供以下正確的 Firebase 連結**
 - Firebase 專案 ID: `show-you-8f297`
 - Package Name: `com.showyouapp.ekkorn`
@@ -142,21 +174,26 @@ Firebase 部署完成後，自動驗證此版本涉及的所有 Jira issue 狀�
 此 skill 會自動從 dev branch 的 commit 歷史中提取更新內容，生成 Release Note。
 
 ### 提取來源
-使用 `git log QA..dev` 來查詢從 QA 到 dev 之間新增的所有 commits。
+使用 `git log QA..dev --format="%H%n%s%n%b"` 來查詢從 QA 到 dev 之間新增的所有 commits 的**完整訊息（標題 + body）**。
 
 ### 識別規則
 
 #### 1. 識別 PR/Branch Merge
-從 merge commit 識別 PR：
+從 merge commit 或 squash merge commit 識別 PR：
 ```
+# 一般 merge commit：
 Merge pull request #126 from SHOW-YOU-APP/fix-ring-tooltip
 → PR #126，接下來分析此 PR 內的所有 commits
+
+# Squash merge commit（標題含 PR 號碼）：
+feat: Minikorn AI 助理完整功能（浮動按鈕、聊天室、互動報告、數據追蹤） (#321)
+→ PR #321，此 commit 的 body 包含所有被 squash 的子 commit 訊息
 ```
 
 #### 2. 提取 Jira Issue 編號
-從 PR 內的 commits 提取所有不同的 Jira issues：
+從 PR 內的 commits 提取所有不同的 Jira issues。**必須掃描完整 commit 訊息（標題 + body）**：
 - 格式：`[EK-XXX]`、`EK-XXX`
-- 範例：
+- **一般 merge 範例**：
   ```
   PR #126 包含：
     ├─ fix: [EK-927] adjust tooltip rendering timing
@@ -179,6 +216,29 @@ Merge pull request #126 from SHOW-YOU-APP/fix-ring-tooltip
     - [EK-932] fix logout animation
   ```
 
+- **Squash merge 範例（重要）**：
+  ```
+  Commit 標題: feat: Minikorn AI 助理完整功能 (#321)
+  Commit Body:
+    * feat:[EK-1260] 新增 Minikorn 浮動按鈕基礎架構
+    * feat:[EK-1261] Minikorn 浮動按鈕串接 Profile API
+    * feat:[EK-1262] 串接 Minikorn 聊天室 URL
+    * feat:[EK-1263] Minikorn 互動報告頁 UI
+    * feat:[EK-1264] Minikorn 互動報告頁串接 API
+    * feat:[EK-1265] Minikorn 數據追蹤埋點
+    ...
+
+  → 標題沒有 EK-XXX，但 body 中有大量 EK-XXX
+  → 必須從 body 提取：EK-1260, EK-1261, EK-1262, EK-1263, EK-1264, EK-1265 ...
+  → Release Note（每個 issue 一條）：
+    - [EK-1260] 新增 Minikorn 浮動按鈕基礎架構
+    - [EK-1261] Minikorn 浮動按鈕串接 Profile API
+    - [EK-1262] 串接 Minikorn 聊天室 URL
+    - [EK-1263] Minikorn 互動報告頁 UI
+    - [EK-1264] Minikorn 互動報告頁串接 API
+    - [EK-1265] Minikorn 數據追蹤埋點
+  ```
+
 #### 3. 功能描述提取
 從每個不同的 issue 中選取第一個有意義的描述：
 - `fix:` - 修復問題
@@ -193,6 +253,27 @@ Merge pull request #126 from SHOW-YOU-APP/fix-ring-tooltip
 ```
 直接 commit: fix: [EK-935] hotfix for crash issue
 → Release Note: [EK-935] hotfix for crash issue
+```
+
+#### 5. 處理 Squash Merge 的 PR（重要）
+當 PR 使用 GitHub Squash Merge 時，所有子 commit 被壓縮成一個 commit：
+- **標題**可能是 PR 標題，不一定包含 `[EK-XXX]`
+- **Body**包含所有被 squash 的子 commit 訊息，其中可能包含大量 `EK-XXX`
+- **必須掃描 commit body** 來提取所有 Jira issue 編號
+- 每個不同的 `EK-XXX` 生成一條 Release Note，描述取自 body 中該 issue 第一次出現的 commit 訊息
+```
+Squash merge commit:
+  標題: feat: Minikorn AI 助理完整功能 (#321)  ← 無 EK-XXX
+  Body:
+    * feat:[EK-1260] 新增浮動按鈕基礎架構
+    * feat:[EK-1261] 串接 Profile API
+    * feat:[EK-1262] 串接聊天室 URL
+
+→ 從 body 提取：EK-1260, EK-1261, EK-1262
+→ Release Notes:
+  - [EK-1260] 新增浮動按鈕基礎架構
+  - [EK-1261] 串接 Profile API
+  - [EK-1262] 串接聊天室 URL
 ```
 
 ### 生成格式
@@ -302,7 +383,7 @@ PR #128: fix-logout
   - 已設定 Dev 和 QA 測試群組
 - ✅ Jira MCP Server（`jira-extended`）
   - 用於驗證和修正 Jira issue 狀態
-  - 需要 `jira_get_issue`、`jira_transition_issue`、`jira_update_assignee`、`jira_add_comment` 工具
+  - 需要 `jira_get_issue`、`jira_transition_issue`、`jira_update_assignee`、`jira_add_comment`、`jira_update_issue` 工具
 
 ### 必需檔案
 - ✅ `gradle/libs.versions.toml`
@@ -420,10 +501,11 @@ appVersionCode = "100051200001"
    └─ git merge dev --no-edit
 
 📋 Step 2: 自動生成 Release Notes
-   ├─ git log QA..dev --oneline（查詢 dev 新增的 commits）
+   ├─ git log QA..dev --format="%H%n%s%n%b"（查詢 dev 新增的完整 commit 訊息）
    ├─ 識別 PR/branch merges
    ├─ 按 PR 分組所有 commits
-   ├─ 從每個 PR 中提取不同的 Jira issues（[EK-XXX] 或 EK-XXX）
+   ├─ 從每個 PR 的完整訊息（標題+body）提取 Jira issues（[EK-XXX] 或 EK-XXX）
+   ├─ ⚠️ Squash merge 的 PR：子 commit 的 EK-XXX 只在 body 中，必須掃描 body
    ├─ 提取功能描述（fix、feat、chore 等）
    ├─ 去重處理（每個 PR 內不同的 issue 分別列出）
    └─ 整理成 Release Note 列表
@@ -447,13 +529,16 @@ appVersionCode = "100051200001"
    ├─ ./gradlew assembleQaRelease
    └─ ./gradlew appDistributionUploadQaRelease
 
-📋 Step 7: Jira Issue 驗證與修正
-   ├─ 從 Release Notes 提取所有 Jira issue（EK-XXX）
+📋 Step 7: Jira Issue 驗證與修正（根據 issue 類型）
+   ├─ 從 git log 完整訊息（標題+body）提取所有 Jira issue（EK-XXX），不只依賴 Release Notes
    ├─ 從 git log 提取每個 issue 對應的 PR 號碼
    ├─ 逐一檢查每個 issue：
-   │   ├─ jira_get_issue 取得 issue 詳情
-   │   ├─ 檢查狀態是否為「QA 測試」→ 否則 jira_transition_issue
-   │   ├─ 檢查受託人是否為回報人 → 否則 jira_update_assignee
+   │   ├─ jira_get_issue 取得 issue 詳情（包含類型）
+   │   ├─ Bug: 檢查狀態是否為「QA 測試」→ 否則 jira_transition_issue
+   │   ├─ 非 Bug: 檢查狀態是否為「完成」→ 否則 jira_transition_issue
+   │   ├─ Bug: 檢查受託人是否為回報人 → 否則 jira_update_assignee
+   │   ├─ 非 Bug: 不修改受託人
+   │   ├─ 檢查修正版本是否包含 Android X.X.X → 否則 jira_update_issue 新增
    │   └─ 檢查最新留言是否包含版號和 PR 連結 → 否則 jira_add_comment
    └─ 輸出驗證結果摘要
 
@@ -464,8 +549,7 @@ appVersionCode = "100051200001"
 
 1. **自動推送：** 此 skill 會自動推送到遠端，請確認變更無誤
 2. **版本遞增：** 版本號會自動計算，無需手動指定
-3. **Release Note 自動生成：** 會從 dev branch 的 commit 歷史自動提取，建議 commit 訊息包含 Jira issue 編號和清晰的描述
-4. **Commit 訊息格式：** 建議使用 `fix: [EK-XXX] 描述` 或 `feat: [EK-XXX] 描述` 格式，方便自動提取
+3. **Release Note 自動生成：** 會從 dev branch 的 commit 歷史自動提取
 5. **PR 組織建議：**
    - 一個 PR 專注於一個功能或修復
    - 如果 PR 內有多個相關但不同的 issues，系統會自動分別列出

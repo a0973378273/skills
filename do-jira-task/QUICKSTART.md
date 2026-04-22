@@ -1,11 +1,11 @@
 # Jira Task - 快速開始指南
 
-5 分鐘學會使用 `/jira-task` 自動完成 Jira 任務實作！
+5 分鐘學會使用 `/do-do-jira-task` 自動完成 Jira 任務實作！
 
 ## 🚀 最簡單的使用方式
 
 ```bash
-/jira-task EK-920
+/do-do-jira-task EK-920
 ```
 
 就這麼簡單！
@@ -20,7 +20,7 @@
 
 **Step 1: 執行 skill**
 ```bash
-/jira-task EK-920
+/do-do-jira-task EK-920
 ```
 
 **Step 2: 回答我的問題**
@@ -91,7 +91,7 @@
 ### 場景 1: 修復 Bug
 
 ```bash
-/jira-task EK-925
+/do-do-jira-task EK-925
 # 我會：
 # 1. 分析 bug 描述
 # 2. 深入程式碼追蹤執行路徑
@@ -104,7 +104,7 @@
 ### 場景 2: 重構程式碼
 
 ```bash
-/jira-task EK-930
+/do-do-jira-task EK-930
 # 我會：
 # 1. 分析現有架構
 # 2. 規劃重構步驟
@@ -115,7 +115,7 @@
 ### 場景 3: 新增 API 整合
 
 ```bash
-/jira-task EK-935
+/do-do-jira-task EK-935
 # 我會詢問：
 # - API 規格文檔在哪？
 # - Request/Response 格式？
@@ -144,7 +144,7 @@
 ### 第一次使用
 1. 確保在專案根目錄
 2. 準備好一個 Jira issue
-3. 執行 `/jira-task <issue-key>`
+3. 執行 `/do-do-jira-task <issue-key>`
 
 ## 🎯 使用技巧
 
@@ -198,7 +198,7 @@ API 文檔: [連結]
 
 ```bash
 # 1. 實作功能
-/jira-task EK-920
+/do-do-jira-task EK-920
 
 # 2. 創建 PR
 /jira-pr EK-920
@@ -210,8 +210,8 @@ API 文檔: [連結]
 ### 搭配 Compose Skill
 
 ```bash
-# 1. 用 jira-task 分析需求
-/jira-task EK-921
+# 1. 用 do-jira-task 分析需求
+/do-do-jira-task EK-921
 
 # 2. 當需要新的 Compose 組件時
 /compose UserProfileCard
@@ -271,7 +271,7 @@ API 文檔: [連結]
 ## 🚀 現在就開始
 
 ```bash
-/jira-task <你的 Issue Key>
+/do-do-jira-task <你的 Issue Key>
 ```
 
 有任何問題隨時告訴我！

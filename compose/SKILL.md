@@ -19,6 +19,11 @@ description: 創建符合 MVI 架構的 Jetpack Compose 組件。自動生成 @P
 /compose ProfileSettingsScreen --with-viewmodel
 ```
 
+從 Figma 設計稿生成組件：
+```bash
+/compose https://www.figma.com/design/AbCdEf123/MyProject?node-id=123-456
+```
+
 互動式創建：
 ```bash
 /compose
@@ -28,12 +33,91 @@ description: 創建符合 MVI 架構的 Jetpack Compose 組件。自動生成 @P
 
 當你執行這個 skill 時，我會自動完成以下步驟：
 
+### 0. 偵測 Figma 網址（如有提供）
+
+如果參數是 Figma 網址（匹配 `figma.com/design/` 或 `figma.com/file/`），自動進入 **Figma 驅動模式**：
+
+#### 0-1. 解析 Figma 網址
+從網址中提取：
+- **fileKey**：`figma.com/(file|design)/<fileKey>/...` 中的 `<fileKey>`
+- **nodeId**（可選）：URL 參數 `node-id=<nodeId>`，將 `-` 轉換為 `:`（如 `123-456` → `123:456`）
+
+#### 0-2. 呼叫 Figma MCP 取得設計資訊
+使用 `mcp__figma__get_figma_data` 工具取得設計稿資料：
+```
+fileKey: "<提取的 fileKey>"
+nodeId: "<提取的 nodeId>"  // 有提供時才傳
+```
+
+#### 0-3. 分析設計稿結構
+從 Figma 回傳的資料中解析：
+- **組件名稱**：從 node 名稱推導，轉為 PascalCase（如 `user-profile-card` → `UserProfileCard`）
+- **組件類型**：根據設計稿結構判斷是 Widget/Card 還是 Screen/Page
+- **佈局結構**：Column / Row / Box 的嵌套關係
+- **UI 元素**：Text（字體大小、顏色、字重）、Image、Button、Icon 等
+- **間距與尺寸**：padding、margin、width、height、spacing
+- **顏色**：背景色、文字色、邊框色等，對應到 Color 值
+- **圓角**：cornerRadius 對應到 `RoundedCornerShape`
+- **圖片資源**：識別需要下載的圖片/圖標節點（**必須下載為本地圖檔，不使用 Compose 程式碼繪製**）
+
+#### 0-4. 下載圖片資源（必須執行）
+**重要**：Figma 設計稿中的所有 icon 和圖片**必須**下載為本地圖檔（SVG 或 PNG），**不得使用 Compose 內建的 Icon composable 或 Material Icons 替代**。
+
+使用 `mcp__figma__download_figma_images` 下載：
+- **圖標/向量圖**：下載為 SVG，存放至 `app/src/main/res/drawable/`
+  - 下載後需將 SVG 轉換為 Android Vector Drawable XML（透過 Android Studio 的 Vector Asset 格式），或直接保留 SVG 供後續手動匯入
+- **點陣圖片**：下載為 PNG（scale=2），存放至 `app/src/main/res/drawable-xxhdpi/`
+- 檔名使用 snake_case，加上 `ic_` 前綴（圖標）或 `img_` 前綴（圖片）
+- 在 Compose 中使用 `painterResource(R.drawable.ic_xxx)` 引用這些本地圖檔
+
+#### 0-5. 轉換為 Compose 組件規格
+將 Figma 設計稿轉換為 Compose 的對應概念：
+
+| Figma 概念 | Compose 對應 |
+|------------|-------------|
+| Auto Layout (vertical) | `Column` |
+| Auto Layout (horizontal) | `Row` |
+| Frame (fixed) | `Box` |
+| Text | `Text` + `TextStyle` |
+| Rectangle (填色) | `Box` + `Modifier.background()` |
+| Rectangle (圓角) | `RoundedCornerShape(Xdp)` |
+| Image fill (網路圖片) | `AsyncImage`（僅限動態 URL 圖片） |
+| Image fill (靜態圖片) | `Image(painterResource(R.drawable.img_xxx))`（使用下載的 PNG 圖檔） |
+| Icon / 向量圖 | `Icon(painterResource(R.drawable.ic_xxx))`（使用下載的 SVG/Vector 圖檔，**禁止用 Material Icons 替代**） |
+| Component / Instance | 提取為獨立的 `@Composable` 子組件 |
+| Padding | `Modifier.padding()` |
+| Gap (spacing) | `Arrangement.spacedBy()` |
+| Constraints (fill) | `Modifier.fillMaxWidth()` / `fillMaxHeight()` |
+| Constraints (fixed) | `Modifier.width(X.dp)` / `height(X.dp)` |
+| Opacity | `Modifier.alpha()` |
+| Drop shadow | `Modifier.shadow()` |
+| Stroke | `Modifier.border()` |
+
+#### 0-6. 圖片/Icon 資源使用規則
+
+**核心原則**：Figma 設計稿中的 icon 和圖片必須使用下載的本地圖檔，不得用程式碼替代。
+
+| 資源類型 | 處理方式 | Compose 引用方式 |
+|---------|---------|-----------------|
+| Icon / 向量圖標 | 下載 SVG → 存為 `drawable/ic_xxx.xml`（Vector Drawable） | `Icon(painterResource(R.drawable.ic_xxx), contentDescription = "...")` |
+| 靜態圖片 | 下載 PNG → 存至 `drawable-xxhdpi/img_xxx.png` | `Image(painterResource(R.drawable.img_xxx), contentDescription = "...")` |
+| 動態網路圖片 | 不下載，使用 URL 參數 | `AsyncImage(model = imageUrl, contentDescription = "...")` |
+
+**禁止行為**：
+- ❌ 用 `Icons.Default.XXX`（Material Icons）替代 Figma 設計稿中的 icon
+- ❌ 用 Compose `Canvas` 或 `drawXxx` 繪製 Figma 中的圖標
+- ❌ 忽略設計稿中的 icon 不下載
+
+完成分析後，進入下方步驟 1 繼續生成組件。
+
+---
+
 ### 1. 收集組件資訊
-- 組件名稱（如：`UserProfileCard`、`LoginScreen`）
+- 組件名稱（如：`UserProfileCard`、`LoginScreen`，或從 Figma 分析結果取得）
 - 組件類型：
   - **Widget/Card** - 簡單 UI 組件，不需要 ViewModel
   - **Screen/Page** - 完整頁面，需要 ViewModel 和狀態管理
-- 組件參數（如：`userName: String`, `onClickAction: () -> Unit`）
+- 組件參數（如：`userName: String`, `onClickAction: () -> Unit`，或從 Figma 設計稿推導）
 - 存放位置（預設自動判斷）
 
 ### 2. 創建 Compose 組件文件
@@ -190,10 +274,13 @@ presentation/
 
 | 參數 | 類型 | 必填 | 說明 | 示例 |
 |-----|------|------|------|------|
-| 組件名稱 | String | 是 | PascalCase 命名 | `UserProfileCard`, `LoginScreen` |
+| 組件名稱 | String | 是* | PascalCase 命名 | `UserProfileCard`, `LoginScreen` |
+| Figma 網址 | URL | 是* | Figma 設計稿網址，自動進入 Figma 驅動模式 | `https://www.figma.com/design/AbCd123/...?node-id=123-456` |
 | --with-viewmodel | Flag | 否 | 強制創建 ViewModel | `--with-viewmodel` |
 | --widget | Flag | 否 | 指定為簡單組件（不創建 ViewModel） | `--widget` |
 | --package | String | 否 | 自定義 package 路徑 | `--package com.work.compose.auth` |
+
+> *「組件名稱」和「Figma 網址」二選一。提供 Figma 網址時，組件名稱從設計稿自動推導。
 
 ## 命名規則
 
@@ -585,6 +672,81 @@ private fun NotificationSettingsScreenLoadingPreview() {
     )
 }
 ```
+
+### 示例 3：從 Figma 設計稿生成組件
+
+```bash
+/compose https://www.figma.com/design/AbCdEf123/MyProject?node-id=123-456
+```
+
+**執行過程**：
+
+1. 解析網址 → `fileKey: "AbCdEf123"`, `nodeId: "123:456"`
+2. 呼叫 `mcp__figma__get_figma_data` 取得設計資料
+3. 分析設計稿得到：
+   - 節點名稱 `reward-card` → 組件名稱 `RewardCard`
+   - Auto Layout (vertical) → `Column`
+   - 包含圖片、文字、按鈕 → 推導參數
+4. 如有圖片資源，呼叫 `mcp__figma__download_figma_images` 下載
+5. 生成 `RewardCard.kt`，包含完整的 Compose 實作和 @Preview
+
+**生成的文件**：`com/work/compose/components/RewardCard.kt`
+
+```kotlin
+@Composable
+fun RewardCard(
+    imageUrl: String,
+    title: String,
+    description: String,
+    onClaimClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp)  // 從 Figma cornerRadius 取得
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {  // 從 Figma padding 取得
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp)  // 從 Figma 尺寸取得
+            )
+            Spacer(modifier = Modifier.height(8.dp))  // 從 Figma gap 取得
+            Text(
+                text = title,
+                fontSize = 18.sp,  // 從 Figma 文字樣式取得
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = description,
+                fontSize = 14.sp,
+                color = Color(0xFF666666)  // 從 Figma 文字顏色取得
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(onClick = onClaimClick) {
+                Text("領取")
+            }
+        }
+    }
+}
+```
+
+### 示例 4：從 Figma 生成完整 Screen（帶 ViewModel）
+
+```bash
+/compose https://www.figma.com/design/AbCdEf123/MyProject?node-id=789-012 --with-viewmodel
+```
+
+如果 Figma 設計稿的節點名稱是 `settings-screen`，將自動生成：
+1. `SettingsScreen.kt` - Compose UI（根據 Figma 佈局）
+2. `SettingsState.kt` - 從設計稿中的可變 UI 元素推導狀態
+3. `SettingsEvent.kt` - 從設計稿中的互動元素推導事件
+4. `SettingsEffect.kt` - 推導副作用（導航、Toast 等）
+5. `SettingsViewModel.kt` - ViewModel
+
+---
 
 ## MVI 架構最佳實踐
 

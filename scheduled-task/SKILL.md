@@ -45,7 +45,8 @@ description: 自動排程執行 Jira 任務的 skill。在指定時間窗口（2
 
 3. **⏰ 時間窗口控制**
    - **執行時間**: 只在晚上 21:00 - 早上 07:00 執行
-   - 不在時間窗口時：顯示需等待時間並暫停
+   - 不在時間窗口時：**使用 CronCreate 工具設定一次性排程（recurring: false）**，在目標時間觸發執行
+   - **禁止使用 sleep/Bash 等待**，Bash 工具有 10 分鐘超時限制，無法用於長時間等待
    - 到達執行時間後：自動繼續執行
 
 ### 階段 3: 執行循環（每個 Issue）
@@ -72,8 +73,8 @@ description: 自動排程執行 Jira 任務的 skill。在指定時間窗口（2
       └─ 確保從最新的 dev 創建 branch
    ```
 
-5. **▶️ 執行 Issue 的所有任務**
-   - 依 TODO 清單順序執行
+5. **▶️ 逐一執行任務並個別 Commit**
+   - 依 TODO 清單順序執行，**每完成一個 task 就立即 commit**
    - 更新任務狀態（pending → in_progress → completed）
    - **遇到問題時自動嘗試解決**：
      - 分析錯誤原因
@@ -83,38 +84,41 @@ description: 自動排程執行 Jira 任務的 skill。在指定時間窗口（2
      - 只有在所有方法都嘗試後才報告問題
    - **目標：不停止，持續推進直到完成**
 
-6. **🌿 Git 工作流程**
+6. **🌿 Git 工作流程（每個 Task）**
    ```
-   創建 feature branch（從最新的 dev）
+   創建 feature branch（從最新的 dev，步驟 4 已完成）
       ↓
-   實作所有程式碼變更
+   對於每個 Task:
+      ├─ 實作該 task 的程式碼變更
+      ├─ Stage 該 task 修改的檔案
+      ├─ Commit（訊息包含 task 描述）
+      └─ 繼續下一個 task
       ↓
-   Stage 變更的檔案
-      ↓
-   Commit 變更（規範格式）
-      ↓
-   顯示完成資訊
+   所有 tasks 完成，顯示完成資訊
    ```
 
-   **注意**: Branch 已在步驟 4 創建，確保從最新的 dev 出來
+   **重點**: 每個 task 獨立 commit，方便 code review 和 revert
 
 7. **⤴️ 進入下一個 Issue**
    - 重複步驟 4-6
    - 直到所有 Issues 完成
 
-### 階段 4: 完成總結
+### 階段 4: Push 並顯示摘要
 
-8. **📊 顯示執行摘要**
+8. **⤴️ Push 所有 branches 到 remote**
+   - 所有 Issues 執行完畢後，逐一 push 每個 feature branch：
+     ```bash
+     git push origin {branch-name}
+     ```
+   - Push 成功後才能產生有效的 GitHub branch 連結
+
+9. **📊 顯示執行摘要**
    - 已完成的 Issues
-   - 創建的 branches
+   - 創建的 branches（附上 GitHub branch 連結，格式：`https://github.com/SHOW-YOU-APP/ekkorn-android/tree/{branch-name}`）
    - 提交的 commits
    - 總執行時間
-   - Token usage 統計
 
-9. **💡 提供後續建議**
-   - 推送 branches
-   - 創建 Pull Requests
-   - 恢復 stashed 變更
+   **注意**：Branch 連結必須在 push 成功後才附上，未 push 前只顯示純文字 branch 名稱
 
 ## 核心功能
 
@@ -217,66 +221,55 @@ Auto stash before scheduled-task at 2026-02-04_21-00-00
    git pull origin dev
    ```
 
-3. **創建 feature branch**
+3. **創建 branch**
    ```bash
-   # 格式: feat/{ISSUE-KEY}-{short-summary}
-   git checkout -b feat/EK-995-fix-newcomer-bonus-timing
+   # 格式: {prefix}/{ISSUE-KEY}-{short-summary}
+   # prefix 根據 Jira issue 類型決定：
+   #   Bug / Bug 修正類 → fix/
+   #   新功能 / Story / Task → feat/
+   #   重構 → refactor/
+   git checkout -b fix/EK-1341-fb-logout-anr   # Bug 修正範例
+   git checkout -b feat/EK-995-newcomer-bonus  # 新功能範例
    ```
 
-**執行任務（步驟 5）：**
+**逐一執行任務並 Commit（步驟 5-6，對每個 Task 重複）：**
 
-4. **在新 branch 上實作所有變更**
-   - 執行所有 TODO 任務
-   - 修改程式碼
-   - 完成所有實作
+4. **實作單一 task 的變更**
+   - 執行該 task 的程式碼修改
+   - 確認變更範圍正確
 
-**完成後提交（步驟 6）：**
+5. **Stage 並 Commit 該 task 的變更**
+   - 只 add 該 task 修改的檔案
+   - Commit（訊息格式由 hook 自動處理）
 
-5. **Stage 相關變更**
-   ```bash
-   # 只 add 該 Issue 修改的檔案
-   git add app/src/.../LoginViewModel.kt
-   git add app/src/.../SomeOtherFile.kt
-   ```
-
-6. **Commit 變更**
-   ```bash
-   git commit -m "[EK-995] 修正新人獎勵時間驗證邏輯
-
-   - 詳細變更說明
-   - 變更點 1
-   - 變更點 2
-
-   Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
-   ```
+6. **重複步驟 4-5 直到所有 tasks 完成**
 
 7. **記錄完成資訊**
    - Branch 名稱: `feat/EK-995-fix-newcomer-bonus-timing`
-   - Commit hash
+   - Commit 列表（每個 task 一個 commit）
    - 修改的檔案列表
 
 #### Branch 命名規則
 
 ```
-feat/{ISSUE-KEY}-{short-summary}
+{prefix}/{ISSUE-KEY}-{short-summary}
 ```
+
+**prefix 對應規則**：
+- Bug / 修正類 issue → `fix/`
+- 新功能 / Story / Task → `feat/`
+- 重構 → `refactor/`
+
+**ISSUE-KEY 必填**：branch 名稱必須包含 Jira issue key（如 EK-xxx），任何情況都不能省略
 
 **範例**:
-- `feat/EK-995-fix-newcomer-bonus-timing`
-- `feat/EK-978-fix-guest-task-navigation`
-- `feat/EK-920-add-dark-mode-toggle`
+- `fix/EK-1341-fb-logout-anr`（Bug 修正）
+- `feat/EK-995-newcomer-bonus-timing`（新功能）
+- `refactor/EK-850-login-flow`（重構）
 
-#### Commit 訊息格式
-
-```
-[{ISSUE-KEY}] {一行摘要}
-
-{詳細描述}
-- 變更點 1
-- 變更點 2
-
-Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
-```
+**禁止**：
+- 使用 `feat/` 作為 Bug 修正的前綴
+- Branch 名稱中省略 EK-xxx（即使 Jira ticket 有指定特定 branch 名稱，也必須在名稱中包含 EK-xxx）
 
 ### 4. 🎯 自動執行循環
 
@@ -298,14 +291,12 @@ Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
    ├─ git pull origin dev
    └─ git checkout -b feat/EK-XXX-...
    ↓
-▶️ 執行該 Issue 的所有任務（在新 branch 上）
-   ├─ 遇到問題自動嘗試解決
-   ├─ 使用替代方案持續推進
-   └─ 完成所有實作
-   ↓
-💾 Commit 變更
-   ├─ git add [修改的檔案]
-   └─ git commit -m "[EK-XXX] ..."
+▶️ 逐一執行 tasks（在新 branch 上）
+   對於每個 Task:
+   ├─ 實作該 task 的變更
+   ├─ git add [該 task 修改的檔案]
+   ├─ git commit -m "[EK-XXX] Task #N: ..."
+   └─ 繼續下一個 task
    ↓
 ⤴️ 返回檢查下一個 Issue
 ```
@@ -346,18 +337,16 @@ Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
         🌿 切換到 dev: git checkout dev && git pull
         🌿 創建 branch: git checkout -b feat/EK-995-xxx
 
-21:05 - ▶️ 執行 4 個 TODO（在新 branch 上）
-        ├─ Task #1: 分析現有程式碼
-        ├─ Task #2: 修改 ViewModel
-        ├─ Task #3: 更新 UI
-        └─ Task #4: 測試功能
-
-21:25 - 💾 Commit 變更
+21:05 - ▶️ 逐一執行 TODO 並個別 Commit
+        ├─ Task #1: 分析現有程式碼 → 💾 commit a1b2c3d
+        ├─ Task #2: 修改 ViewModel → 💾 commit e4f5g6h
+        ├─ Task #3: 更新 UI → 💾 commit i7j8k9l
+        └─ Task #4: 測試功能 → 💾 commit m0n1o2p
         ✅ 完成！
 
 21:30 - 💬 顯示摘要
         📦 Branch: feat/EK-995-xxx
-        💾 Commit: a1b2c3d
+        💾 Commits: 4 個（每個 task 一個）
 ```
 
 ### 範例 2: 批次處理多個 Issues
@@ -377,20 +366,20 @@ Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
         💾 Stash 未提交變更
         🌿 切換到 dev 並更新
         🌿 創建 feat/EK-995-xxx branch
-        ▶️ 執行 4 個 TODO（在新 branch 上）
-        💾 Commit 變更
+        ▶️ 逐一執行 4 個 TODO，每個獨立 commit
+        💾 4 個 Commits
 
 22:00 - 【第二輪：EK-978】
         ✅ 再次檢查所有條件
         🌿 切換回 dev 並更新
         🌿 創建 feat/EK-978-xxx branch
-        ▶️ 執行 4 個 TODO（在新 branch 上）
-        💾 Commit 變更
+        ▶️ 逐一執行 4 個 TODO，每個獨立 commit
+        💾 4 個 Commits
 
 23:00 - ✅ 全部完成！
-        💬 已創建 2 個獨立 branches
-        📦 feat/EK-995-xxx
-        📦 feat/EK-978-xxx
+        💬 已創建 2 個獨立 branches，共 8 個 commits
+        📦 feat/EK-995-xxx (4 commits)
+        📦 feat/EK-978-xxx (4 commits)
 ```
 
 ### 範例 3: 自定義選項
@@ -578,12 +567,14 @@ Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
 │ 總進度: ████████████░░░░ 50% (1/2 Issues)     │
 ├────────────────────────────────────────────────┤
 │ ✅ EK-995 (已完成)                             │
-│    ✅ #1-4 所有任務完成                        │
+│    ✅ #1 分析程式碼 → 💾 a1b2c3d               │
+│    ✅ #2 修改 ViewModel → 💾 e4f5g6h           │
+│    ✅ #3 更新 UI → 💾 i7j8k9l                  │
+│    ✅ #4 邊界處理 → 💾 m0n1o2p                 │
 │    📦 Branch: feat/EK-995-...                  │
-│    💾 Commit: a1b2c3d                          │
 │                                                │
 │ ⏳ EK-978 (執行中)                             │
-│    ✅ #5 已完成                                │
+│    ✅ #5 已完成 → 💾 q3r4s5t                   │
 │    ▶️  #6 進行中                               │
 │    ⏸️ #7-8 等待中                              │
 ├────────────────────────────────────────────────┤
@@ -644,8 +635,8 @@ Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
 ### 獨立使用
 
 ```bash
-# 僅分析需求，不執行（在 jira-task 中處理）
-/jira-task EK-995
+# 僅分析需求，不執行（在 do-jira-task 中處理）
+/do-do-jira-task EK-995
 > 「先不要執行，只列出 TODO」
 
 # 使用 scheduled-task 排程執行
